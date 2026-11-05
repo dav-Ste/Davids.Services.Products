@@ -15,7 +15,7 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 await builder.Configuration.LoadVaultAsync();
-builder.AddServiceDefaults();
+builder.AddServiceDefaults("davids-products");
 builder.Services.AddTrustedForwardedHeaders(builder.Configuration, builder.Environment);
 builder.Services.AddProductsInfrastructure(builder.Configuration);
 
@@ -144,7 +144,10 @@ if (builder.Configuration.GetValue<bool>("Database:ApplyMigrations"))
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<ProductsDbContext>();
     await db.Database.MigrateAsync();
-    if (builder.Configuration.GetValue("SeedProducts:Enabled", true))
+    var seedDefaults = builder.Configuration.GetValue<bool?>("SeedProducts:Enabled")
+        ?? builder.Configuration.GetValue<bool?>("Products:SeedDefaults")
+        ?? true;
+    if (seedDefaults)
     {
         await ProductsSeeder.SeedDefaultCatalogAsync(db);
     }
