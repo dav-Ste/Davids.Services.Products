@@ -159,6 +159,11 @@ public sealed class ProductsService(
         ProductActorMetadata actor,
         CancellationToken ct = default)
     {
+        if (command.Reason is { Length: > 200 } || (command.Reason is not null && command.Reason.Contains('\0')))
+        {
+            throw new InvalidProductException("Stock adjustment reason must be at most 200 characters.");
+        }
+
         var product = await repository.GetAsync(id, ct)
             ?? throw new ProductNotFoundException(id);
 
@@ -209,7 +214,7 @@ public sealed class ProductsService(
             e.ActorAuthority,
             e.ChangedFieldsJson,
             e.CorrelationId,
-            e.OccurredAtUtc)).ToArray();
+            DateTime.SpecifyKind(e.OccurredAtUtc, DateTimeKind.Utc))).ToArray();
     }
 
     public async Task ApplyOrderCompletedAsync(OrderCompleted evt, CancellationToken ct = default)
@@ -258,5 +263,16 @@ public sealed class ProductsService(
             p.Id, p.Sku, p.Name, p.Category, p.Price, p.Currency, p.StockQuantity, p.IsActive));
 
     private static ProductDto Map(Product p)
-        => new(p.Id, p.Sku, p.Name, p.Description, p.Category, p.Price, p.Currency, p.StockQuantity, p.IsActive, p.CreatedAt, p.UpdatedAt);
+        => new(
+            p.Id,
+            p.Sku,
+            p.Name,
+            p.Description,
+            p.Category,
+            p.Price,
+            p.Currency,
+            p.StockQuantity,
+            p.IsActive,
+            DateTime.SpecifyKind(p.CreatedAt, DateTimeKind.Utc),
+            DateTime.SpecifyKind(p.UpdatedAt, DateTimeKind.Utc));
 }

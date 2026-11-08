@@ -191,9 +191,18 @@ app.MapGet("/", () => Results.Text("Davids Products Service"))
 
 app.MapGet("/products", async (string? search, string? category, int? limit, IProductsService service, CancellationToken ct) =>
     {
+        if ((search is not null && (search.Length > 100 || search.Contains('\0'))) ||
+            (category is not null && (category.Length > 60 || category.Contains('\0'))) ||
+            limit is <= 0 or > 200)
+        {
+            return Results.BadRequest(new { code = "invalid_query", reason = "Query parameters must be within bounds without control bytes." });
+        }
+
         var items = await service.SearchPublicAsync(search, category, limit ?? 100, ct);
         return Results.Ok(items);
     })
+    .Produces<IReadOnlyList<ProductDto>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status400BadRequest)
     .AllowAnonymous();
 
 app.MapGet("/products/{productId:guid}", async (Guid productId, IProductsService service, CancellationToken ct) =>
@@ -201,13 +210,25 @@ app.MapGet("/products/{productId:guid}", async (Guid productId, IProductsService
         var item = await service.GetPublicAsync(productId, ct);
         return item is null ? Results.NotFound() : Results.Ok(item);
     })
+    .Produces<ProductDto>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound)
     .AllowAnonymous();
 
 app.MapGet("/products/admin", async (string? search, string? category, int? limit, IProductsService service, CancellationToken ct) =>
     {
+        if ((search is not null && (search.Length > 100 || search.Contains('\0'))) ||
+            (category is not null && (category.Length > 60 || category.Contains('\0'))) ||
+            limit is <= 0 or > 500)
+        {
+            return Results.BadRequest(new { code = "invalid_query", reason = "Query parameters must be within bounds without control bytes." });
+        }
+
         var items = await service.SearchAdminAsync(search, category, limit ?? 200, ct);
         return Results.Ok(items);
     })
+    .Produces<IReadOnlyList<ProductDto>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status400BadRequest)
     .RequireAuthorization("WorkforceRead");
 
 app.MapGet("/products/admin/{productId:guid}", async (Guid productId, IProductsService service, CancellationToken ct) =>
@@ -215,34 +236,69 @@ app.MapGet("/products/admin/{productId:guid}", async (Guid productId, IProductsS
         var item = await service.GetAdminAsync(productId, ct);
         return item is null ? Results.NotFound() : Results.Ok(item);
     })
+    .Produces<ProductDto>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound)
     .RequireAuthorization("WorkforceRead");
 
 app.MapPost("/products", async (CreateProduct command, ClaimsPrincipal user, HttpContext ctx, IProductsService service, CancellationToken ct) =>
     {
+        if (command is null)
+        {
+            return Results.BadRequest(new { code = "invalid_request", reason = "Request body is required." });
+        }
+
         var created = await service.CreateAsync(command, ResolveActor(user, ctx), ct);
         return Results.Created($"/products/{created.Id}", created);
     })
+    .Produces<ProductDto>(StatusCodes.Status201Created)
+    .Produces(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status409Conflict)
     .RequireAuthorization("WorkforceMutate");
 
 app.MapPut("/products/{productId:guid}", async (Guid productId, UpdateProduct command, ClaimsPrincipal user, HttpContext ctx, IProductsService service, CancellationToken ct) =>
     {
+        if (command is null)
+        {
+            return Results.BadRequest(new { code = "invalid_request", reason = "Request body is required." });
+        }
+
         var updated = await service.UpdateAsync(productId, command, ResolveActor(user, ctx), ct);
         return Results.Ok(updated);
     })
+    .Produces<ProductDto>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound)
     .RequireAuthorization("WorkforceMutate");
 
 app.MapPost("/products/{productId:guid}/stock", async (Guid productId, AdjustProductStock command, ClaimsPrincipal user, HttpContext ctx, IProductsService service, CancellationToken ct) =>
     {
+        if (command is null || (command.Reason is not null && (command.Reason.Length > 200 || command.Reason.Contains('\0'))))
+        {
+            return Results.BadRequest(new { code = "invalid_request", reason = "Valid stock adjustment request is required." });
+        }
+
         var updated = await service.AdjustStockAsync(productId, command, ResolveActor(user, ctx), ct);
         return Results.Ok(updated);
     })
+    .Produces<ProductDto>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status400BadRequest)
+    .Produces(StatusCodes.Status404NotFound)
+    .Produces(StatusCodes.Status409Conflict)
     .RequireAuthorization("WorkforceMutate");
 
 app.MapGet("/products/change-audits", async (Guid? productId, int? limit, IProductsService service, CancellationToken ct) =>
     {
+        if (limit is <= 0 or > 500)
+        {
+            return Results.BadRequest(new { code = "invalid_query", reason = "Limit must be between 1 and 500." });
+        }
+
         var audits = await service.GetAuditsAsync(productId, limit ?? 100, ct);
         return Results.Ok(audits);
     })
+    .Produces<IReadOnlyList<ProductChangeAuditDto>>(StatusCodes.Status200OK)
+    .Produces(StatusCodes.Status400BadRequest)
     .RequireAuthorization("WorkforceRead");
 
 app.Run();
